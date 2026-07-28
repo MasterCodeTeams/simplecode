@@ -1,0 +1,134 @@
+-- ============================================================================
+-- MASTER CODE — Supabase Schema (gabungan semua tabel)
+-- Jalankan seluruh file ini sekali di Supabase Dashboard -> SQL Editor -> New query -> Run.
+-- Aman dijalankan berkali-kali (pakai IF NOT EXISTS) kalau ada tabel yang sudah ada.
+-- ============================================================================
+
+-- Pastikan gen_random_uuid() tersedia (biasanya sudah default aktif di Supabase)
+create extension if not exists pgcrypto;
+
+-- ----------------------------------------------------------------------------
+-- 1) SURVEY (/survey, /survey/live)
+-- ----------------------------------------------------------------------------
+create table if not exists survey_responses (
+  id uuid primary key default gen_random_uuid(),
+  login text not null,
+  avatar_url text,
+  week_key text not null,
+  opinion text not null,
+  has_issue boolean not null,
+  issue_detail text,
+  suggestion text not null,
+  created_at timestamptz not null default now(),
+  unique (login, week_key)
+);
+create index if not exists survey_responses_week_idx
+  on survey_responses (week_key, created_at desc);
+
+-- ----------------------------------------------------------------------------
+-- 2) ANNOUNCEMENT (/announcement)
+-- ----------------------------------------------------------------------------
+create table if not exists announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  content text not null,
+  created_by text not null,
+  avatar_url text,
+  created_at timestamptz not null default now()
+);
+create index if not exists announcements_created_idx
+  on announcements (created_at desc);
+
+create table if not exists announcement_comments (
+  id uuid primary key default gen_random_uuid(),
+  announcement_id uuid not null references announcements(id) on delete cascade,
+  login text not null,
+  avatar_url text,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists announcement_comments_ann_idx
+  on announcement_comments (announcement_id, created_at);
+
+-- key/value kecil buat nyimpen kapan terakhir komentar di-reset (tiap 45 menit)
+create table if not exists announcement_meta (
+  key text primary key,
+  value text
+);
+
+-- ----------------------------------------------------------------------------
+-- 3) KOMUNITAS (/komunitas) — chat + polling, auto-reset tiap 30 menit
+-- ----------------------------------------------------------------------------
+create table if not exists community_messages (
+  id uuid primary key default gen_random_uuid(),
+  login text not null,
+  avatar_url text,
+  type text not null default 'text', -- 'text' | 'image' | 'poll'
+  content text,                       -- isi teks, atau URL gambar
+  poll_id uuid,
+  created_at timestamptz not null default now()
+);
+create index if not exists community_messages_created_idx
+  on community_messages (created_at);
+create index if not exists community_messages_login_idx
+  on community_messages (login);
+
+create table if not exists community_polls (
+  id uuid primary key default gen_random_uuid(),
+  question text not null,
+  options jsonb not null,       -- [{ "id": "0", "label": "Ya" }, ...]
+  created_by text not null,
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists community_poll_votes (
+  poll_id uuid not null,
+  login text not null,
+  option_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (poll_id, login)
+);
+
+create table if not exists community_meta (
+  key text primary key,
+  value text
+);
+
+-- ----------------------------------------------------------------------------
+-- 4) OWNER STATS (dipakai /owner) — aktivitas user
+-- ----------------------------------------------------------------------------
+create table if not exists user_activity (
+  login text primary key,
+  avatar_url text,
+  first_seen timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  total_active_seconds bigint not null default 0
+);
+
+-- ============================================================================
+-- CATATAN PENTING
+-- ============================================================================
+-- 1) Semua akses dari aplikasi lewat SERVICE ROLE KEY (lib/supabase.ts), yang
+--    otomatis BYPASS Row Level Security. Jadi RLS boleh dibiarkan mati.
+--    Kalau mau extra-aman (jaga-jaga kalau anon/public key kebocor), aktifkan
+--    RLS + tolak semua akses anon, dengan uncomment blok di bawah ini:
+--
+-- alter table survey_responses enable row level security;
+-- alter table announcements enable row level security;
+-- alter table announcement_comments enable row level security;
+-- alter table community_messages enable row level security;
+-- alter table community_polls enable row level security;
+-- alter table community_poll_votes enable row level security;
+-- alter table user_activity enable row level security;
+-- (tidak perlu tambah policy apapun — RLS aktif tanpa policy = default deny
+--  untuk anon/public, sementara service role tetap bisa akses penuh)
+--
+-- 2) Untuk fitur upload gambar di Komunitas, buat 1 STORAGE BUCKET secara
+--    manual (BUKAN lewat SQL) di Supabase Dashboard -> Storage -> New bucket:
+--      - Nama   : community-uploads
+--      - Public : AKTIFKAN (biar gambar langsung tampil tanpa signed URL)
+--
+-- 3) Environment variable yang wajib di-set di project (.env.local / Vercel /
+--    Netlify): SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY (lihat .env.example).
+-- ============================================================================
