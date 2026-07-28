@@ -1,8 +1,0 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "id.my.mastercode.www.twa",
-        "sha256_cert_fingerprints": ["1B:85:2B:92:A5:3F:4A:94:A0:19:54:A0:6D:22:0D:BB:93:C3:44:7D:36:0C:C2:BD:E8:8B:99:27:EB:D6:03:B4"]
-      }
-    }]
